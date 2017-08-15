@@ -23,9 +23,16 @@ RESULT_FILES = 'converted_result_files.csv'
 ALL_FILES = 'all_files.csv'
 FILTERED_FILES = 'filtered_files.csv'
 SUMMARY_FILES = 'summary_files.csv'
+LABEL_MAP_FILE = 'face_label_map.pbtxt'
+TF_RECORD_TRAINING = 'face_training.record'
+TF_RECORD_EVALUATION = 'face_evaluation.record'
 DEBUG = False
 DEBUG_COUNT=5
 
+'''
+    Scan base directory and generate file list csv file,
+     which as file_name, label_text, label (number)
+'''
 def get_dirlist(base_dir,destination_dir):
     global label_index
     global DEBUG
@@ -33,19 +40,33 @@ def get_dirlist(base_dir,destination_dir):
     destination_file = destination_dir + '/' + ALL_FILES
     des = open(destination_file,'w')
     
+    label_map_file_path = destination_dir + '/' + LABEL_MAP_FILE
+    label_map_file = open(label_map_file_path,'w')
+    
     count = 0
+    label_index = 1
     
     for d in os.listdir(base_dir):
         dir_name = str(d)
         current_dir = base_dir+'/'+dir_name
         if (os.path.isdir(current_dir)):
             # if the file is directory
-
+            
+            # generate number label
+            # in object detection API, the label should be started from 1
             index = 0
             if dir_name not in labels:
                 labels[dir_name] = label_index
                 index = label_index
                 label_index = label_index + 1
+                
+                # write label map
+                label_map = 'item {\n'
+                label_map = label_map + ' id:' + str(index) + '\n'
+                label_map = label_map + ' name:\'' + dir_name + '\'\n'
+                label_map = label_map + '}\n\n'
+                label_map_file.write(label_map)
+                
             else:
                 index = labels[dir_name]
                 
@@ -53,16 +74,19 @@ def get_dirlist(base_dir,destination_dir):
                 if( not os.path.isdir(f)):
                     file_name = str(f)
                     
+                    # write training data information into csv file
                     # label_index, label_text,label_count,file_name    
                     buf = ( str(index) + ',' + dir_name + ','   +file_name+'\n')
                     count = count + 1
                     if (DEBUG and count > DEBUG_COUNT):
                         break
                     des.write(buf)
+                    
         if (DEBUG and count > DEBUG_COUNT):
             break
         
     des.close()
+    label_map_file.close()
 '''
     Extract face location from image file
     Filter inappropriate image
@@ -113,6 +137,10 @@ def get_imageinfo(image_file):
         xmin,ymin,xmax,ymax))
     return True,rect
 
+'''
+    filter training data imageS and generate list of filtered file
+    it filters data by calling get_imageinfo
+'''
 def filter_images(base_dir,destination_dir):
     global label_count
     global ALL_FIELS
@@ -155,6 +183,7 @@ def filter_images(base_dir,destination_dir):
 
 '''
     draw box in image and write it into destination directory
+    it also convert all of file fortmat into jpeg format and also change file ext to '.jpeg'
 '''
 def draw_box(base_dir,label_text,label,file_name,rect,destination_dir):
     global label_count
@@ -189,7 +218,12 @@ def draw_box(base_dir,label_text,label,file_name,rect,destination_dir):
         rf.write('%s,%s,%d,%d,%d,%d,%d\n'%(destination_file_name,label_text,label,rect[0],rect[1],rect[2],rect[3]))
         
     return destination_file_name
-
+'''
+    Save image and meta data into tfrecord file
+    it writes data into single file.
+    But for huge number of data training, it needs to be enhanced to store the data
+    to multiple files.
+'''
 def write_tfrecord(destination_dir,label_text,label,file_name,rect,tfwriter):
     
     filename = file_name
@@ -204,7 +238,7 @@ def write_tfrecord(destination_dir,label_text,label,file_name,rect,tfwriter):
     classes_text = [label_text]
     classes = [int(label)]
     
-    image_file_path = destination_dir+'/'+label_text+'/'+file_name
+    image_file_path = destination_dir+'/'+file_name
     image_file_path = image_file_path.rstrip()
     image_file = open(image_file_path,'rb')
     encoded_image_data = image_file.read()
@@ -237,11 +271,12 @@ def write_tfrecord(destination_dir,label_text,label,file_name,rect,tfwriter):
      - image that has sunglass
 
 '''
-def convert_images(base_dir,destination_dir,tfrecord_file):
+def convert_images(base_dir,destination_dir):
     
     global label_count
     global RESULT_FILES
     global FILTERED_FILES
+    global TF_RECORD_TRAINING
     
     filtered_files_path = (destination_dir + '/'+FILTERED_FILES).rstrip()
     result_file_path = (destination_dir + '/'+RESULT_FILES).rstrip()
@@ -252,10 +287,15 @@ def convert_images(base_dir,destination_dir,tfrecord_file):
     # the reason to find this is, it will generate trainining data with same number across lables
     
     min_num = min(list(label_count.values()))
+    num_of_training = int(min_num*0.75)
+    num_of_evaluation = int(min_num*0.25)
     gen_count = {}
     
-    tf_record_file_path = (destination_dir + '/'+tfrecord_file).rstrip()
-    tfwriter = tf.python_io.TFRecordWriter(tf_record_file_path)
+    training_record_file_path = (destination_dir + '/'+TF_RECORD_TRAINING).rstrip()
+    evaluation_record_file_path = (destination_dir + '/'+TF_RECORD_EVALUATION).rstrip()
+    
+    training_writer = tf.python_io.TFRecordWriter(training_record_file_path)
+    evaluation_writer = tf.python_io.TFRecordWriter(evaluation_record_file_path)
     
     with open(result_file_path,'w') as result_files:
         result_files.write('file_name,label text,label,xmin,ymin,xmax,ymax')
@@ -277,9 +317,15 @@ def convert_images(base_dir,destination_dir,tfrecord_file):
                 gen_count[label] = 0
                 
             if( gen_count[label] < min_num ):
-                draw_box(base_dir,label_text,label,file_name,rect,destination_dir)
-                write_tfrecord(destination_dir,label_text,label,file_name,rect,tfwriter)
-                
+                new_file_name = draw_box(base_dir,label_text,label,file_name,rect,destination_dir)
+                if( gen_count[label] < num_of_training):
+                    # write to training file
+                    writer = training_writer
+                else:
+                    # write to evaluation file
+                    writer = evaluation_writer
+
+                write_tfrecord(destination_dir,label_text,label,new_file_name,rect,writer)
                 gen_count[label] = gen_count[label] + 1
         
             
@@ -288,7 +334,7 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/Users/terrycho/keys/terrycho-ml
 
 def main():
     if( len(sys.argv) < 4):
-        print('Usage : python convert.py source_directory destination_directoy tfrecord_file_name')
+        print('Usage : python convert.py source_directory destination_directoy ')
         return
     base_dir = str(sys.argv[1])
     destination_dir = str(sys.argv[2])
@@ -299,7 +345,7 @@ def main():
     print ('[Info] Scan directory %s'%base_dir)
     get_dirlist(base_dir,destination_dir)
     filter_images(base_dir,destination_dir)
-    convert_images(base_dir,destination_dir,tfrecord_file)
+    convert_images(base_dir,destination_dir)
     # only write new index file that is filtered
 
 main()
