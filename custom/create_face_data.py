@@ -169,7 +169,9 @@ def filter_images(base_dir,destination_dir):
                 count = 0
                 
             if(success):
-                filtered_files.write('%s,%s,%d,%d,%d,%d,%d,%d\n'%(file_name,label_text,label,count,rect[0],rect[1],rect[2],rect[3]))
+                with Image.open(file_path) as image:
+                    width,height = image.size
+                    filtered_files.write('%s,%s,%d,%d,%d,%d,%d,%d,%d,%d\n'%(file_name,label_text,label,count,rect[0],rect[1],rect[2],rect[3],width,height))
                 label_count[label_text] = count + 1
             
     
@@ -224,13 +226,11 @@ def draw_box(base_dir,label_text,label,file_name,rect,destination_dir):
     But for huge number of data training, it needs to be enhanced to store the data
     to multiple files.
 '''
-def write_tfrecord(destination_dir,label_text,label,file_name,rect,tfwriter):
+def write_tfrecord(destination_dir,label_text,label,file_name,rect,width,height,tfwriter):
     
     filename = file_name
     image_format = 'jpg'
     
-    height = int(rect[3] - rect[1])
-    width = int(rect[2] - rect[0])
     xmins = [float(rect[0] / width)]
     ymins = [float(rect[1] / height)]
     xmaxs = [float(rect[2] / width)]
@@ -311,6 +311,8 @@ def convert_images(base_dir,destination_dir):
             ymin = int(buf[5])
             xmax = int(buf[6])
             ymax = int(buf[7])
+            width = int(buf[8])
+            height = int(buf[8])
             rect = [xmin,ymin,xmax,ymax]
             
             if label not in gen_count:
@@ -325,7 +327,7 @@ def convert_images(base_dir,destination_dir):
                     # write to evaluation file
                     writer = evaluation_writer
 
-                write_tfrecord(destination_dir,label_text,label,new_file_name,rect,writer)
+                write_tfrecord(destination_dir,label_text,label,new_file_name,rect,width,height,writer)
                 gen_count[label] = gen_count[label] + 1
         
             
