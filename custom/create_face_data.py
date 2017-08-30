@@ -196,7 +196,7 @@ def draw_box(base_dir,label_text,label,file_name,rect,destination_dir):
     
     image = Image.open(image_file)
     draw = ImageDraw.Draw(image)
-    draw.rectangle( ((rect[0],rect[1]),(rect[2],rect[3])),outline='red' )
+    #draw.rectangle( ((rect[0],rect[1]),(rect[2],rect[3])),outline='red' )
     
     label_x = int(rect[0])
     
@@ -205,8 +205,8 @@ def draw_box(base_dir,label_text,label,file_name,rect,destination_dir):
     else:
         label_y = int(rect[3])
     
-    draw.rectangle( ((label_x,label_y),(label_x+50,label_y+15)),fill='red' )
-    draw.text((label_x+3,label_y+2), label_text, font=ImageFont.load_default().font )
+    #draw.rectangle( ((label_x,label_y),(label_x+50,label_y+15)),fill='red' )
+    #draw.text((label_x+3,label_y+2), label_text, font=ImageFont.load_default().font )
     
     name,ext = os.path.splitext(file_name)
     
@@ -231,10 +231,10 @@ def write_tfrecord(destination_dir,label_text,label,file_name,rect,width,height,
     filename = file_name
     image_format = 'jpg'
     
-    xmins = [float(rect[0] / width)]
-    ymins = [float(rect[1] / height)]
-    xmaxs = [float(rect[2] / width)]
-    ymaxs = [float(rect[3] / height)]
+    xmins = [float(rect[0]) / float(width)]
+    ymins = [float(rect[1]) / float(height)]
+    xmaxs = [float(rect[2]) / float(width)]
+    ymaxs = [float(rect[3]) / float(height)]
     classes_text = [label_text]
     classes = [int(label)]
     
@@ -243,6 +243,9 @@ def write_tfrecord(destination_dir,label_text,label,file_name,rect,width,height,
     image_file = open(image_file_path,'rb')
     encoded_image_data = image_file.read()
     
+    print('tf record :',xmins,ymins,xmaxs,ymaxs,width,height,classes_text,classes,len(encoded_image_data))
+    if (xmins[0] > 1.0 or ymins[0] > 1.0 or xmaxs[0] > 1.0 or ymaxs[0]> 1.0):
+        print ('WARNING : box value is bigger than 1.0',xmins,ymins,xmaxs,ymaxs,width,height,rect,classes_text,classes)
     tf_example = tf.train.Example(features=tf.train.Features(feature={
         'image/height': dataset_util.int64_feature(height),
         'image/width': dataset_util.int64_feature(width),
@@ -271,7 +274,7 @@ def write_tfrecord(destination_dir,label_text,label,file_name,rect,width,height,
      - image that has sunglass
 
 '''
-def convert_images(base_dir,destination_dir):
+def convert_images(base_dir,destination_dir,m):
     
     global label_count
     global RESULT_FILES
@@ -286,7 +289,10 @@ def convert_images(base_dir,destination_dir):
     # the return will be 8
     # the reason to find this is, it will generate trainining data with same number across lables
     
-    min_num = min(list(label_count.values()))
+    if (m is  None):
+        min_num = min(list(label_count.values()))
+    else:
+        min_num = m
     num_of_training = int(min_num*0.75)
     num_of_evaluation = int(min_num*0.25)
     gen_count = {}
@@ -312,7 +318,7 @@ def convert_images(base_dir,destination_dir):
             xmax = int(buf[6])
             ymax = int(buf[7])
             width = int(buf[8])
-            height = int(buf[8])
+            height = int(buf[9])
             rect = [xmin,ymin,xmax,ymax]
             
             if label not in gen_count:
@@ -326,7 +332,7 @@ def convert_images(base_dir,destination_dir):
                 else:
                     # write to evaluation file
                     writer = evaluation_writer
-
+                print('[INFO] adding ',destination_dir,label_text,label,new_file_name,rect,width,height)
                 write_tfrecord(destination_dir,label_text,label,new_file_name,rect,width,height,writer)
                 gen_count[label] = gen_count[label] + 1
         
@@ -347,7 +353,8 @@ def main():
     print ('[Info] Scan directory %s'%base_dir)
     get_dirlist(base_dir,destination_dir)
     filter_images(base_dir,destination_dir)
-    convert_images(base_dir,destination_dir)
+    #convert_images(base_dir,destination_dir,m=54)
+    convert_images(base_dir,destination_dir,m=54)
     # only write new index file that is filtered
 
 main()
