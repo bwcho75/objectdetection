@@ -353,8 +353,6 @@ def main():
     print ('[Info] Scan directory %s'%base_dir)
     get_dirlist(base_dir,destination_dir)
     filter_images(base_dir,destination_dir)
-    #convert_images(base_dir,destination_dir,m=54)
     convert_images(base_dir,destination_dir,m=54)
-    # only write new index file that is filtered
 
 main()
